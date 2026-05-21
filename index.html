@@ -97,17 +97,27 @@ body {
 .table-container::-webkit-scrollbar { height:4px; }
 .table-container::-webkit-scrollbar-track { background:transparent; }
 .table-container::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-.table-header {
-  display:grid; grid-template-columns:36px minmax(140px,1fr) repeat(7,36px) 44px; gap:2px;
-  padding:10px 8px; font-size:11px; font-weight:700; color:var(--text-dim);
-  text-transform:uppercase; letter-spacing:0.5px; position:sticky; top:0;
-  background:var(--bg); z-index:2; min-width:520px;
+
+/* Shared grid for header and rows */
+.table-grid {
+  display:grid;
+  grid-template-columns:36px minmax(150px, 1.5fr) 36px 36px 36px 36px 36px 36px 36px 44px;
+  gap:0 4px;
+  padding:10px 8px;
+  align-items:center;
 }
+.table-header {
+  font-size:11px; font-weight:700; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:0.5px; position:sticky; top:0;
+  background:var(--bg-card); z-index:2; min-width:540px;
+  border-bottom:1px solid var(--border);
+}
+.table-header > div:not(:nth-child(2)) { text-align:center; }
+.table-header .club-col { text-align:left; }
 .table-row {
-  display:grid; grid-template-columns:36px minmax(140px,1fr) repeat(7,36px) 44px; gap:2px;
-  padding:10px 8px; font-size:13px; align-items:center;
+  font-size:13px;
   border-bottom:1px solid rgba(42,47,69,0.4); transition:background 0.15s;
-  min-width:520px;
+  min-width:540px;
 }
 .table-row:last-child { border-bottom:none; }
 .table-row:active { background:rgba(124,58,237,0.08); }
@@ -281,7 +291,7 @@ body {
 
 <div class="view active" id="view-table">
   <div class="table-container">
-    <div class="table-header">
+    <div class="table-grid table-header">
       <div>#</div><div class="club-col">Club</div><div>MP</div><div>W</div><div>D</div><div>L</div><div>GF</div><div>GA</div><div>GD</div><div>Pts</div>
     </div>
     <div id="table-body"></div>
@@ -829,7 +839,7 @@ function renderTable() {
     const p = i+1;
     let pc = p<=4?'pos-ucl':p===5?'pos-uel':p===6?'pos-uecl':p>=18?'pos-rel':'';
     const gd = r.gd>0?`+${r.gd}`:`${r.gd}`, gc = r.gd>0?'gd-pos':r.gd<0?'gd-neg':'';
-    return `<div class="table-row">
+    return `<div class="table-grid table-row">
       <div class="pos ${pc}">${p}</div>
       <div class="club-cell">${crest(r.club)}<div class="club-name">${r.club}</div></div>
       <div class="stat">${r.mp}</div><div class="stat">${r.w}</div><div class="stat">${r.d}</div>
