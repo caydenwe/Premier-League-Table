@@ -64,6 +64,13 @@ body {
   color:#22c55e; cursor:pointer; transition:all 0.2s; margin-right:6px;
 }
 .sync-btn.visible { display:flex; }
+.sync-btn.syncing { opacity:0.6; pointer-events:none; }
+.sync-dot {
+  width:6px; height:6px; border-radius:50%; background:#22c55e;
+  display:inline-block; margin-right:2px;
+}
+.sync-dot.syncing { animation:pulse 1s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 .tab-bar {
   position:fixed; bottom:0; left:0; right:0; z-index:100;
   background:rgba(10,14,26,0.92); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
@@ -252,9 +259,9 @@ body {
 <div class="header">
   <div class="header-inner">
     <div><h1>Premier League</h1><div class="season">2025-26 Season</div></div>
-    <button class="sync-btn" id="syncToggle" onclick="openSyncModal()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2"/></svg>
-      Sync
+    <button class="sync-btn" id="syncToggle" onclick="openSettingsModal()">
+      <span class="sync-dot" id="syncDot"></span>
+      Cloud
     </button>
     <button class="edit-btn" id="editToggle" onclick="toggleEditMode()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -301,16 +308,21 @@ body {
 
 <div class="modal-overlay" id="syncOverlay" onclick="closeSyncModal(event)">
   <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">Sync Data</div>
+    <div class="modal-title">Cloud Sync Settings</div>
     <div style="margin-bottom:16px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">EXPORT — Copy this code to another device</div>
-      <textarea id="exportCode" readonly style="width:100%;height:60px;background:rgba(26,31,51,0.8);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;padding:8px;resize:none;font-family:monospace" onclick="this.select()"></textarea>
-      <button class="modal-btn save" style="margin-top:8px;padding:10px;font-size:13px" onclick="copyExport()">Copy Code</button>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">GitHub Personal Access Token</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">
+        Create a <b>fine-grained PAT</b> at
+        <a href="https://github.com/settings/tokens?type=beta" target="_blank" style="color:var(--accent-light)">github.com/settings/tokens</a><br>
+        Give it <b>Contents: Read & Write</b> access on this repo only.
+      </div>
+      <input type="password" id="patInput" placeholder="ghp_xxxx or github_pat_xxxx" style="width:100%;height:44px;background:rgba(26,31,51,0.8);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;padding:0 12px;font-family:monospace">
+      <button class="modal-btn save" style="margin-top:8px;padding:10px;font-size:13px" onclick="savePAT()">Save Token</button>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:16px">
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">IMPORT — Paste a code from another device</div>
-      <textarea id="importCode" placeholder="Paste sync code here..." style="width:100%;height:60px;background:rgba(26,31,51,0.8);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;padding:8px;resize:none;font-family:monospace"></textarea>
-      <button class="modal-btn save" style="margin-top:8px;padding:10px;font-size:13px" onclick="importData()">Import</button>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">Status</div>
+      <div id="syncStatus" style="font-size:12px;color:var(--text-dim);line-height:1.5">Not configured</div>
+      <button class="modal-btn save" style="margin-top:12px;padding:10px;font-size:13px" onclick="forceSync()">Sync Now</button>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
@@ -1092,32 +1104,44 @@ function saveLocal() {
     if (f.hg !== null) scores[i] = [f.hg, f.ag];
   });
   localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+  saveCloud();
 }
 
-function loadLocal() {
+async function loadLocal() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return;
-  try {
-    const scores = JSON.parse(raw);
-    Object.entries(scores).forEach(([i, [hg, ag]]) => {
-      const idx = parseInt(i);
-      if (idx >= 0 && idx < F.length) { F[idx].hg = hg; F[idx].ag = ag; }
-    });
-  } catch(e) {}
+  if (raw) {
+    try {
+      const scores = JSON.parse(raw);
+      Object.entries(scores).forEach(([i, [hg, ag]]) => {
+        const idx = parseInt(i);
+        if (idx >= 0 && idx < F.length) { F[idx].hg = hg; F[idx].ag = ag; }
+      });
+    } catch(e) {}
+  }
+  // Try cloud sync if PAT is set
+  if (getPAT()) {
+    await loadCloud();
+  }
 }
 
-// --- Sync modal ---
-function openSyncModal() {
-  // Generate export code
-  const scores = {};
-  F.forEach((f, i) => {
-    if (f.hg !== null) scores[i] = [f.hg, f.ag];
-  });
-  const json = JSON.stringify(scores);
-  // Simple base64 encoding
-  const code = btoa(unescape(encodeURIComponent(json)));
-  document.getElementById('exportCode').value = code;
-  document.getElementById('importCode').value = '';
+// --- Cloud sync via GitHub API ---
+const REPO_OWNER = 'caydenwe';
+const REPO_NAME = 'Premier-League-Table';
+const SCORES_PATH = 'scores.json';
+const RAW_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${SCORES_PATH}`;
+const API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SCORES_PATH}`;
+
+let cloudSyncReady = false;
+let syncPending = false;
+let syncTimeout = null;
+
+function getPAT() {
+  return localStorage.getItem('epl2526_pat') || '';
+}
+
+function openSettingsModal() {
+  document.getElementById('patInput').value = getPAT();
+  updateSyncStatus();
   document.getElementById('syncOverlay').classList.add('active');
 }
 
@@ -1126,34 +1150,120 @@ function closeSyncModal(e) {
   document.getElementById('syncOverlay').classList.remove('active');
 }
 
-function copyExport() {
-  const el = document.getElementById('exportCode');
-  el.select();
-  navigator.clipboard.writeText(el.value).then(() => {
-    showToast('Code copied!');
-  }).catch(() => {
-    document.execCommand('copy');
-    showToast('Code copied!');
+function savePAT() {
+  const pat = document.getElementById('patInput').value.trim();
+  if (!pat) {
+    localStorage.removeItem('epl2526_pat');
+    cloudSyncReady = false;
+    showToast('Token removed');
+  } else {
+    localStorage.setItem('epl2526_pat', pat);
+    cloudSyncReady = true;
+    showToast('Token saved!');
+  }
+  updateSyncStatus();
+}
+
+function updateSyncStatus() {
+  const pat = getPAT();
+  const el = document.getElementById('syncStatus');
+  const dot = document.getElementById('syncDot');
+  if (!pat) {
+    el.textContent = 'Not configured — add a GitHub PAT to enable cloud sync';
+    dot.style.background = '#8b90a5';
+  } else {
+    el.textContent = 'Cloud sync active — scores auto-save to your repo';
+    dot.style.background = '#22c55e';
+  }
+}
+
+async function loadCloud() {
+  if (!getPAT()) return;
+  setSyncing(true);
+  try {
+    const res = await fetch(RAW_URL + '?t=' + Date.now());
+    if (!res.ok) throw new Error('Failed to fetch');
+    const data = await res.json();
+    let count = 0;
+    Object.entries(data).forEach(([i, [hg, ag]]) => {
+      const idx = parseInt(i);
+      if (idx >= 0 && idx < F.length) {
+        if (F[idx].hg !== hg || F[idx].ag !== ag) count++;
+        F[idx].hg = hg; F[idx].ag = ag;
+      }
+    });
+    cloudSyncReady = true;
+    if (count > 0) showToast(`Synced ${count} updates from cloud`);
+  } catch(e) {
+    console.log('Cloud load failed:', e);
+  }
+  setSyncing(false);
+}
+
+async function saveCloud() {
+  if (!getPAT() || !cloudSyncReady) return;
+  // Debounce: wait 2s after last change before saving
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => doSaveCloud(), 2000);
+}
+
+async function doSaveCloud() {
+  const pat = getPAT();
+  if (!pat) return;
+  setSyncing(true);
+  try {
+    // First get the current file to get the SHA
+    const getRes = await fetch(API_URL, {
+      headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!getRes.ok) throw new Error('Failed to get file SHA');
+    const getFile = await getRes.json();
+    const sha = getFile.sha;
+
+    // Build scores object
+    const scores = {};
+    F.forEach((f, i) => {
+      if (f.hg !== null) scores[i] = [f.hg, f.ag];
+    });
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(scores, null, 2))));
+
+    // Update the file
+    const putRes = await fetch(API_URL, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message: 'Update scores', content, sha })
+    });
+    if (!putRes.ok) throw new Error('Failed to save');
+  } catch(e) {
+    console.log('Cloud save failed:', e);
+    showToast('Cloud sync failed');
+  }
+  setSyncing(false);
+}
+
+function forceSync() {
+  if (!getPAT()) { showToast('Add a PAT first'); return; }
+  loadCloud().then(() => {
+    doSaveCloud().then(() => {
+      renderAll();
+      showToast('Synced!');
+    });
   });
 }
 
-function importData() {
-  const code = document.getElementById('importCode').value.trim();
-  if (!code) { showToast('Paste a sync code first'); return; }
-  try {
-    const json = decodeURIComponent(escape(atob(code)));
-    const scores = JSON.parse(json);
-    let count = 0;
-    Object.entries(scores).forEach(([i, [hg, ag]]) => {
-      const idx = parseInt(i);
-      if (idx >= 0 && idx < F.length) { F[idx].hg = hg; F[idx].ag = ag; count++; }
-    });
-    saveLocal();
-    closeSyncModal();
-    renderAll();
-    showToast(`Imported ${count} scores!`);
-  } catch(e) {
-    showToast('Invalid sync code');
+function setSyncing(on) {
+  const btn = document.getElementById('syncToggle');
+  const dot = document.getElementById('syncDot');
+  if (on) {
+    btn.classList.add('syncing');
+    dot.classList.add('syncing');
+  } else {
+    btn.classList.remove('syncing');
+    dot.classList.remove('syncing');
   }
 }
 
@@ -1172,8 +1282,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   };
 });
 
-loadLocal();
-renderAll();
+loadLocal().then(() => {
+  updateSyncStatus();
+  renderAll();
+});
 </script>
 </body>
 </html>
