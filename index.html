@@ -101,7 +101,7 @@ body {
 /* Shared grid for header and rows */
 .table-grid {
   display:grid;
-  grid-template-columns:36px minmax(150px, 1.5fr) 36px 36px 36px 36px 36px 36px 36px 44px;
+  grid-template-columns:36px minmax(120px, 180px) 36px 36px 36px 36px 36px 36px 36px 44px;
   gap:0 4px;
   padding:10px 8px;
   align-items:center;
@@ -114,6 +114,23 @@ body {
 }
 .table-header > div:not(:nth-child(2)) { text-align:center; }
 .table-header .club-col { text-align:left; }
+
+/* Sticky first two columns (position + club) */
+.table-grid > :nth-child(1),
+.table-grid > :nth-child(2) {
+  position:sticky;
+  background:var(--bg-card);
+  z-index:1;
+}
+.table-grid > :nth-child(1) { left:0; }
+.table-grid > :nth-child(2) { left:36px; }
+
+/* Header sticky columns sit above row sticky columns */
+.table-header > :nth-child(1),
+.table-header > :nth-child(2) {
+  z-index:3;
+}
+
 .table-row {
   font-size:13px;
   border-bottom:1px solid rgba(42,47,69,0.4); transition:background 0.15s;
@@ -130,8 +147,8 @@ body {
 .pos-uel { background:rgba(249,115,22,0.2); color:var(--uel); }
 .pos-uecl { background:rgba(34,197,94,0.2); color:var(--uecl); }
 .pos-rel { background:rgba(239,68,68,0.2); color:var(--rel); }
-.club-cell { display:flex; align-items:center; gap:8px; }
-.club-name { font-weight:600; white-space:nowrap; font-size:13px; }
+.club-cell { display:flex; align-items:center; gap:8px; overflow:hidden; }
+.club-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
 .club-crest { width:22px; height:22px; flex-shrink:0; object-fit:contain; border-radius:4px; }
 .stat { text-align:center; font-size:12px; color:var(--text-dim); font-variant-numeric:tabular-nums; }
 .stat.pts { font-weight:800; color:var(--text); font-size:14px; }
