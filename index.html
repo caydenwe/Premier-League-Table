@@ -101,7 +101,7 @@ body {
 /* Shared grid for header and rows */
 .table-grid {
   display:grid;
-  grid-template-columns:36px minmax(140px, max-content) 36px 36px 36px 36px 36px 36px 36px 44px;
+  grid-template-columns:36px minmax(200px, 1fr) 36px 36px 36px 36px 36px 36px 36px 44px;
   gap:0 4px;
   padding:10px 8px;
   align-items:center;
@@ -123,7 +123,7 @@ body {
   z-index:1;
 }
 .table-grid > :nth-child(1) { left:0; }
-.table-grid > :nth-child(2) { left:36px; }
+.table-grid > :nth-child(2) { left:36px; padding-right:12px; }
 
 /* Header sticky columns sit above row sticky columns */
 .table-header > :nth-child(1),
