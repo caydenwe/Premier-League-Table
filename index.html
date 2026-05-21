@@ -57,6 +57,13 @@ body {
 }
 .edit-btn.visible { display:flex; }
 .edit-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.sync-btn {
+  display:none; align-items:center; gap:5px;
+  background:rgba(34,197,94,0.15); border:1px solid rgba(34,197,94,0.3);
+  border-radius:20px; padding:6px 12px; font-size:11px; font-weight:600;
+  color:#22c55e; cursor:pointer; transition:all 0.2s; margin-right:6px;
+}
+.sync-btn.visible { display:flex; }
 .tab-bar {
   position:fixed; bottom:0; left:0; right:0; z-index:100;
   background:rgba(10,14,26,0.92); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px);
@@ -245,6 +252,10 @@ body {
 <div class="header">
   <div class="header-inner">
     <div><h1>Premier League</h1><div class="season">2025-26 Season</div></div>
+    <button class="sync-btn" id="syncToggle" onclick="openSyncModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0118.8-4.3M22 12.5a10 10 0 01-18.8 4.2"/></svg>
+      Sync
+    </button>
     <button class="edit-btn" id="editToggle" onclick="toggleEditMode()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       Edit
@@ -286,6 +297,25 @@ body {
   <button class="tab-btn" data-view="view-analysis">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Analysis
   </button>
+</div>
+
+<div class="modal-overlay" id="syncOverlay" onclick="closeSyncModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Sync Data</div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">EXPORT — Copy this code to another device</div>
+      <textarea id="exportCode" readonly style="width:100%;height:60px;background:rgba(26,31,51,0.8);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;padding:8px;resize:none;font-family:monospace" onclick="this.select()"></textarea>
+      <button class="modal-btn save" style="margin-top:8px;padding:10px;font-size:13px" onclick="copyExport()">Copy Code</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:16px">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">IMPORT — Paste a code from another device</div>
+      <textarea id="importCode" placeholder="Paste sync code here..." style="width:100%;height:60px;background:rgba(26,31,51,0.8);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:11px;padding:8px;resize:none;font-family:monospace"></textarea>
+      <button class="modal-btn save" style="margin-top:8px;padding:10px;font-size:13px" onclick="importData()">Import</button>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
@@ -1032,6 +1062,7 @@ function saveScore() {
   const ag = parseInt(document.getElementById('awayScore').value);
   if(isNaN(hg) || isNaN(ag) || hg<0 || ag<0) { showToast('Enter valid scores'); return; }
   F[editIdx].hg = hg; F[editIdx].ag = ag;
+  saveLocal();
   closeModal();
   renderAll();
   showToast('Score saved!');
@@ -1040,6 +1071,7 @@ function saveScore() {
 function deleteScore() {
   if(editIdx === null) return;
   F[editIdx].hg = null; F[editIdx].ag = null;
+  saveLocal();
   closeModal();
   renderAll();
   showToast('Score cleared');
@@ -1051,6 +1083,80 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2000);
 }
 
+// --- localStorage save/load ---
+const STORAGE_KEY = 'epl2526_scores';
+
+function saveLocal() {
+  const scores = {};
+  F.forEach((f, i) => {
+    if (f.hg !== null) scores[i] = [f.hg, f.ag];
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+}
+
+function loadLocal() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const scores = JSON.parse(raw);
+    Object.entries(scores).forEach(([i, [hg, ag]]) => {
+      const idx = parseInt(i);
+      if (idx >= 0 && idx < F.length) { F[idx].hg = hg; F[idx].ag = ag; }
+    });
+  } catch(e) {}
+}
+
+// --- Sync modal ---
+function openSyncModal() {
+  // Generate export code
+  const scores = {};
+  F.forEach((f, i) => {
+    if (f.hg !== null) scores[i] = [f.hg, f.ag];
+  });
+  const json = JSON.stringify(scores);
+  // Simple base64 encoding
+  const code = btoa(unescape(encodeURIComponent(json)));
+  document.getElementById('exportCode').value = code;
+  document.getElementById('importCode').value = '';
+  document.getElementById('syncOverlay').classList.add('active');
+}
+
+function closeSyncModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('syncOverlay').classList.remove('active');
+}
+
+function copyExport() {
+  const el = document.getElementById('exportCode');
+  el.select();
+  navigator.clipboard.writeText(el.value).then(() => {
+    showToast('Code copied!');
+  }).catch(() => {
+    document.execCommand('copy');
+    showToast('Code copied!');
+  });
+}
+
+function importData() {
+  const code = document.getElementById('importCode').value.trim();
+  if (!code) { showToast('Paste a sync code first'); return; }
+  try {
+    const json = decodeURIComponent(escape(atob(code)));
+    const scores = JSON.parse(json);
+    let count = 0;
+    Object.entries(scores).forEach(([i, [hg, ag]]) => {
+      const idx = parseInt(i);
+      if (idx >= 0 && idx < F.length) { F[idx].hg = hg; F[idx].ag = ag; count++; }
+    });
+    saveLocal();
+    closeSyncModal();
+    renderAll();
+    showToast(`Imported ${count} scores!`);
+  } catch(e) {
+    showToast('Invalid sync code');
+  }
+}
+
 function renderAll() { renderTable(); renderMW(); renderFixtures(); renderAnalysis(); }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1059,11 +1165,14 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.add('active');
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     document.getElementById(btn.dataset.view).classList.add('active');
-    // Show edit button only on fixtures tab
-    document.getElementById('editToggle').classList.toggle('visible', btn.dataset.view === 'view-fixtures');
+    // Show edit and sync buttons only on fixtures tab
+    const isFixtures = btn.dataset.view === 'view-fixtures';
+    document.getElementById('editToggle').classList.toggle('visible', isFixtures);
+    document.getElementById('syncToggle').classList.toggle('visible', isFixtures);
   };
 });
 
+loadLocal();
 renderAll();
 </script>
 </body>
