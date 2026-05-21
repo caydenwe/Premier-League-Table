@@ -329,6 +329,7 @@ body {
         <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="forceSync()">Push & Pull</button>
       </div>
       <button class="modal-btn cancel" style="margin-top:8px;padding:8px;font-size:11px;width:100%" onclick="diagnoseSync()">🔍 Diagnose Connection</button>
+      <button class="modal-btn cancel" style="margin-top:4px;padding:8px;font-size:11px;width:100%" onclick="showScoreCounts()">📊 Show Score Counts</button>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
@@ -1250,19 +1251,31 @@ async function loadCloud() {
     }
 
     // Apply cloud data
+    const localCount = F.filter(f => f.hg !== null).length;
+    const cloudCount = Object.keys(data).length;
+    console.log(`Local scores: ${localCount}, Cloud scores: ${cloudCount}`);
+
     let count = 0;
+    const diffs = [];
     Object.entries(data).forEach(([i, [hg, ag]]) => {
       const idx = parseInt(i);
       if (idx >= 0 && idx < F.length) {
-        if (F[idx].hg !== hg || F[idx].ag !== ag) count++;
+        if (F[idx].hg !== hg || F[idx].ag !== ag) {
+          count++;
+          diffs.push(`MW${F[idx].m} ${F[idx].h} vs ${F[idx].a}: local[${F[idx].hg}-${F[idx].ag}] → cloud[${hg}-${ag}]`);
+        }
         F[idx].hg = hg; F[idx].ag = ag;
       }
     });
 
     cloudSyncReady = true;
-    console.log(`Cloud sync: ${count} scores loaded, last update: ${new Date(cloudTime).toLocaleString()}`);
-    if (count > 0) showToast(`Synced ${count} scores from cloud`);
-    else showToast('Cloud data matches local');
+    console.log(`Cloud sync: ${count} differences found`);
+    if (diffs.length > 0) {
+      console.log('Differences:', diffs.slice(0, 5).join('\n'));
+      showToast(`Synced ${count} scores from cloud`);
+    } else {
+      showToast(`Cloud matches local (${cloudCount} scores)`);
+    }
   } catch(e) {
     console.error('Cloud load failed:', e);
     const errEl = document.getElementById('lastError');
@@ -1289,7 +1302,10 @@ async function doSaveCloud() {
     const getRes = await fetch(API_URL, {
       headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' }
     });
-    if (!getRes.ok) throw new Error('Failed to get file SHA');
+    if (!getRes.ok) {
+      const errText = await getRes.text();
+      throw new Error(`Failed to get SHA (${getRes.status}): ${errText.substring(0, 150)}`);
+    }
     const getFile = await getRes.json();
     const sha = getFile.sha;
 
@@ -1298,6 +1314,8 @@ async function doSaveCloud() {
     F.forEach((f, i) => {
       if (f.hg !== null) scores[i] = [f.hg, f.ag];
     });
+    const scoreCount = Object.keys(scores).length;
+    console.log(`Pushing ${scoreCount} scores to cloud`);
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(scores, null, 2))));
 
     // Update the file
@@ -1312,17 +1330,18 @@ async function doSaveCloud() {
     });
     if (!putRes.ok) {
       const errBody = await putRes.text();
-      throw new Error(`Save failed: ${putRes.status} ${errBody}`);
+      throw new Error(`Save failed: ${putRes.status} ${errBody.substring(0, 200)}`);
     }
     const result = await putRes.json();
     // Track the new commit
     if (result.commit) {
       lastCloudCommit = result.commit.sha;
     }
-    console.log('Cloud save successful');
+    console.log(`Cloud save successful: ${scoreCount} scores pushed`);
+    showToast(`Pushed ${scoreCount} scores to cloud`);
   } catch(e) {
     console.error('Cloud save failed:', e);
-    showToast('Cloud sync failed');
+    showToast('Push failed: ' + e.message);
   }
   setSyncing(false);
 }
@@ -1399,6 +1418,47 @@ async function diagnoseSync() {
   } catch(e) {
     errEl.textContent = `❌ Network error: ${e.message}. Check internet connection.`;
   }
+}
+
+async function showScoreCounts() {
+  const errEl = document.getElementById('lastError');
+  errEl.style.display = 'block';
+
+  const localCount = F.filter(f => f.hg !== null).length;
+  let msg = `📊 Local scores: ${localCount} of ${F.length} fixtures`;
+
+  const pat = getPAT();
+  if (pat) {
+    try {
+      const res = await fetch(API_URL, {
+        headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' }
+      });
+      if (res.ok) {
+        const file = await res.json();
+        const b64 = file.content.replace(/\s/g, '');
+        const data = JSON.parse(atob(b64));
+        const cloudCount = Object.keys(data).length;
+        msg += `\n☁️ Cloud scores: ${cloudCount} of ${F.length} fixtures`;
+
+        // Find MW38 scores specifically
+        const mw38Local = F.filter(f => f.m === 38 && f.hg !== null).length;
+        const mw38Cloud = Object.entries(data).filter(([i]) => {
+          const idx = parseInt(i);
+          return idx >= 0 && idx < F.length && F[idx].m === 38;
+        }).length;
+        msg += `\n⚽ MW38 local: ${mw38Local} scores, cloud: ${mw38Cloud} scores`;
+      } else {
+        msg += `\n❌ Cloud fetch failed (${res.status})`;
+      }
+    } catch(e) {
+      msg += `\n❌ Cloud check failed: ${e.message}`;
+    }
+  } else {
+    msg += `\n⚠️ No PAT — can't check cloud`;
+  }
+
+  errEl.style.whiteSpace = 'pre-line';
+  errEl.textContent = msg;
 }
 
 function setSyncing(on) {
