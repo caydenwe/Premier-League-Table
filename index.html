@@ -1268,13 +1268,23 @@ async function loadCloud() {
       }
     });
 
+    // Also check for local-only scores that cloud doesn't have
+    const localOnly = [];
+    F.forEach((f, i) => {
+      if (f.hg !== null && !(i in data)) {
+        localOnly.push(`MW${f.m} ${f.h} vs ${f.a} (${f.hg}-${f.ag})`);
+      }
+    });
+
     cloudSyncReady = true;
-    console.log(`Cloud sync: ${count} differences found`);
-    if (diffs.length > 0) {
-      console.log('Differences:', diffs.slice(0, 5).join('\n'));
-      showToast(`Synced ${count} scores from cloud`);
+    console.log(`Cloud sync: ${count} overwritten, ${localOnly.length} local-only scores cleared`);
+    if (diffs.length > 0 || localOnly.length > 0) {
+      if (diffs.length > 0) console.log('Overwritten:', diffs.slice(0, 5).join('\n'));
+      if (localOnly.length > 0) console.log('Local-only (cleared):', localOnly.slice(0, 5).join('\n'));
+      const total = count + localOnly.length;
+      showToast(`Pulled ${cloudCount} scores from cloud (${total} changes)`);
     } else {
-      showToast(`Cloud matches local (${cloudCount} scores)`);
+      showToast(`Pulled ${cloudCount} scores — no changes`);
     }
   } catch(e) {
     console.error('Cloud load failed:', e);
@@ -1349,13 +1359,13 @@ async function doSaveCloud() {
 async function forceSync() {
   if (!getPAT()) { showToast('Add a PAT first'); return; }
   try {
-    await loadCloud();
+    // Push FIRST so local changes aren't lost
     await doSaveCloud();
+    // Then pull to get any other device's changes
+    await loadCloud();
     renderAll();
-    showToast('Synced!');
     updateLastSyncTime();
   } catch(e) {
-    // loadCloud already showed error toast
     console.error('Force sync failed:', e);
   }
 }
