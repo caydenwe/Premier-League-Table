@@ -323,10 +323,12 @@ body {
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">Status</div>
       <div id="syncStatus" style="font-size:12px;color:var(--text-dim);line-height:1.5">Not configured</div>
       <div id="lastSyncTime" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      <div id="lastError" style="font-size:11px;color:#f87171;margin-top:4px;display:none"></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="pullCloud()">Pull from Cloud</button>
         <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="forceSync()">Push & Pull</button>
       </div>
+      <button class="modal-btn cancel" style="margin-top:8px;padding:8px;font-size:11px;width:100%" onclick="diagnoseSync()">🔍 Diagnose Connection</button>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
@@ -1195,20 +1197,34 @@ async function loadCloud() {
     };
 
     // Fetch the file content
+    console.log('Fetching from:', API_URL);
     const res = await fetch(API_URL, { headers });
+    console.log('Response status:', res.status, res.statusText);
+
     if (!res.ok) {
+      const errText = await res.text();
+      console.error('Error response:', errText);
       if (res.status === 404) {
         console.log('No scores.json in repo yet — starting fresh');
         setSyncing(false);
         return;
       }
-      throw new Error(`HTTP ${res.status}`);
+      if (res.status === 401) {
+        throw new Error('Invalid PAT — check your token');
+      }
+      if (res.status === 403) {
+        throw new Error('PAT lacks permission — needs Contents: Read & Write');
+      }
+      throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
     }
     const file = await res.json();
+    console.log('File size:', file.size, 'bytes, encoding:', file.encoding);
 
     // Decode base64 content
     const content = atob(file.content);
+    console.log('Decoded content length:', content.length);
     const data = JSON.parse(content);
+    console.log('Parsed entries:', Object.keys(data).length);
 
     // Check commit timestamp for version tracking
     const commitRes = await fetch(COMMITS_URL, { headers });
@@ -1218,6 +1234,7 @@ async function loadCloud() {
       if (commits.length > 0) {
         cloudTime = new Date(commits[0].commit.committer.date).getTime();
         lastCloudCommit = commits[0].sha;
+        console.log('Latest commit:', commits[0].sha.substring(0, 7), 'at', new Date(cloudTime).toLocaleString());
       }
     }
 
@@ -1234,9 +1251,10 @@ async function loadCloud() {
     cloudSyncReady = true;
     console.log(`Cloud sync: ${count} scores loaded, last update: ${new Date(cloudTime).toLocaleString()}`);
     if (count > 0) showToast(`Synced ${count} scores from cloud`);
+    else showToast('Cloud data matches local');
   } catch(e) {
     console.error('Cloud load failed:', e);
-    showToast('Cloud sync failed — check console');
+    showToast('Sync failed: ' + e.message);
   }
   setSyncing(false);
 }
@@ -1317,6 +1335,47 @@ function updateLastSyncTime() {
   const el = document.getElementById('lastSyncTime');
   if (lastCloudCommit) {
     el.textContent = `Last cloud update: ${new Date().toLocaleTimeString()}`;
+  }
+}
+
+async function diagnoseSync() {
+  const pat = getPAT();
+  const errEl = document.getElementById('lastError');
+  errEl.style.display = 'block';
+
+  if (!pat) {
+    errEl.textContent = '❌ No PAT configured. Add a GitHub Personal Access Token first.';
+    return;
+  }
+
+  errEl.textContent = '⏳ Testing connection...';
+
+  try {
+    // Test 1: Basic API connectivity
+    const testRes = await fetch('https://api.github.com/rate_limit', {
+      headers: { 'Authorization': `Bearer ${pat}` }
+    });
+    if (!testRes.ok) {
+      errEl.textContent = `❌ API auth failed (${testRes.status}). Your PAT may be invalid or expired.`;
+      return;
+    }
+    const rateData = await testRes.json();
+    const remaining = rateData.resources.core.remaining;
+    errEl.textContent = `✅ Auth OK. API rate limit: ${remaining} remaining. Testing file access...`;
+
+    // Test 2: File access
+    const fileRes = await fetch(API_URL, {
+      headers: { 'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json' }
+    });
+    if (!fileRes.ok) {
+      const body = await fileRes.text();
+      errEl.textContent = `❌ File access failed (${fileRes.status}): ${body.substring(0, 150)}`;
+      return;
+    }
+    const fileData = await fileRes.json();
+    errEl.textContent = `✅ File found! ${fileData.name} (${fileData.size} bytes). Sync should work.`;
+  } catch(e) {
+    errEl.textContent = `❌ Network error: ${e.message}. Check internet connection.`;
   }
 }
 
