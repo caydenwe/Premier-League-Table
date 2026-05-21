@@ -146,9 +146,9 @@ body {
 }
 .fixture-date { font-size:11px; color:var(--text-dim); font-weight:600; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px; }
 .fixture-match { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:8px; }
-.fixture-team-wrap { display:flex; align-items:center; gap:8px; }
-.fixture-team-wrap.home { justify-content:flex-end; text-align:right; }
-.fixture-team-wrap.away { justify-content:flex-start; text-align:left; }
+.fixture-team-wrap { display:flex; align-items:center; gap:8px; min-width:0; }
+.fixture-team-wrap.home { justify-content:flex-start; }
+.fixture-team-wrap.away { justify-content:flex-end; }
 .fixture-team { font-size:13px; font-weight:600; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .fixture-team.winner { color:var(--accent-light); }
 .fixture-score {
@@ -808,11 +808,11 @@ function renderFixtures() {
       const hw = isPlayed && f.hg>f.ag, aw = isPlayed && f.ag>f.hg;
       html += `<div class="fixture-card ${isPlayed?'':'unplayed'}" ${editMode ? `onclick="openModal(${idx})"` : ''}>
         <div class="fixture-match">
-          <div class="fixture-team-wrap home"><div class="fixture-team ${hw?'winner':''}">${f.h}</div>${crestSm(f.h)}</div>
+          <div class="fixture-team-wrap home">${crestSm(f.h)}<div class="fixture-team ${hw?'winner':''}">${f.h}</div></div>
           ${isPlayed
             ? `<div class="fixture-score"><span>${f.hg}</span><span class="sep">-</span><span>${f.ag}</span></div>`
             : `<div class="fixture-vs">vs</div>`}
-          <div class="fixture-team-wrap away">${crestSm(f.a)}<div class="fixture-team ${aw?'winner':''}">${f.a}</div></div>
+          <div class="fixture-team-wrap away"><div class="fixture-team ${aw?'winner':''}">${f.a}</div>${crestSm(f.a)}</div>
         </div>
         <div class="fixture-time">${f.t}${editMode ? (isPlayed ? '<div class="edit-hint">Tap to edit score</div>' : '<div class="edit-hint">Tap to enter score</div>') : ''}</div>
       </div>`;
