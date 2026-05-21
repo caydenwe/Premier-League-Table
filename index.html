@@ -322,7 +322,11 @@ body {
     <div style="border-top:1px solid var(--border);padding-top:16px">
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;font-weight:600">Status</div>
       <div id="syncStatus" style="font-size:12px;color:var(--text-dim);line-height:1.5">Not configured</div>
-      <button class="modal-btn save" style="margin-top:12px;padding:10px;font-size:13px" onclick="forceSync()">Sync Now</button>
+      <div id="lastSyncTime" style="font-size:11px;color:var(--text-dim);margin-top:4px"></div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="pullCloud()">Pull from Cloud</button>
+        <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="forceSync()">Push & Pull</button>
+      </div>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
@@ -1128,12 +1132,13 @@ async function loadLocal() {
 const REPO_OWNER = 'caydenwe';
 const REPO_NAME = 'Premier-League-Table';
 const SCORES_PATH = 'scores.json';
-const RAW_URL = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${SCORES_PATH}`;
 const API_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${SCORES_PATH}`;
+const COMMITS_URL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits?path=${SCORES_PATH}&per_page=1`;
 
 let cloudSyncReady = false;
 let syncPending = false;
 let syncTimeout = null;
+let lastCloudCommit = null; // Track latest cloud commit SHA
 
 function getPAT() {
   return localStorage.getItem('epl2526_pat') || '';
@@ -1178,12 +1183,45 @@ function updateSyncStatus() {
 }
 
 async function loadCloud() {
-  if (!getPAT()) return;
+  const pat = getPAT();
+  if (!pat) return;
   setSyncing(true);
   try {
-    const res = await fetch(RAW_URL + '?t=' + Date.now());
-    if (!res.ok) throw new Error('Failed to fetch');
-    const data = await res.json();
+    // Use authenticated API to avoid caching and support private repos
+    const headers = {
+      'Authorization': `Bearer ${pat}`,
+      'Accept': 'application/vnd.github.v3+json',
+      'Cache-Control': 'no-cache'
+    };
+
+    // Fetch the file content
+    const res = await fetch(API_URL, { headers });
+    if (!res.ok) {
+      if (res.status === 404) {
+        console.log('No scores.json in repo yet — starting fresh');
+        setSyncing(false);
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const file = await res.json();
+
+    // Decode base64 content
+    const content = atob(file.content);
+    const data = JSON.parse(content);
+
+    // Check commit timestamp for version tracking
+    const commitRes = await fetch(COMMITS_URL, { headers });
+    let cloudTime = 0;
+    if (commitRes.ok) {
+      const commits = await commitRes.json();
+      if (commits.length > 0) {
+        cloudTime = new Date(commits[0].commit.committer.date).getTime();
+        lastCloudCommit = commits[0].sha;
+      }
+    }
+
+    // Apply cloud data
     let count = 0;
     Object.entries(data).forEach(([i, [hg, ag]]) => {
       const idx = parseInt(i);
@@ -1192,10 +1230,13 @@ async function loadCloud() {
         F[idx].hg = hg; F[idx].ag = ag;
       }
     });
+
     cloudSyncReady = true;
-    if (count > 0) showToast(`Synced ${count} updates from cloud`);
+    console.log(`Cloud sync: ${count} scores loaded, last update: ${new Date(cloudTime).toLocaleString()}`);
+    if (count > 0) showToast(`Synced ${count} scores from cloud`);
   } catch(e) {
-    console.log('Cloud load failed:', e);
+    console.error('Cloud load failed:', e);
+    showToast('Cloud sync failed — check console');
   }
   setSyncing(false);
 }
@@ -1237,9 +1278,18 @@ async function doSaveCloud() {
       },
       body: JSON.stringify({ message: 'Update scores', content, sha })
     });
-    if (!putRes.ok) throw new Error('Failed to save');
+    if (!putRes.ok) {
+      const errBody = await putRes.text();
+      throw new Error(`Save failed: ${putRes.status} ${errBody}`);
+    }
+    const result = await putRes.json();
+    // Track the new commit
+    if (result.commit) {
+      lastCloudCommit = result.commit.sha;
+    }
+    console.log('Cloud save successful');
   } catch(e) {
-    console.log('Cloud save failed:', e);
+    console.error('Cloud save failed:', e);
     showToast('Cloud sync failed');
   }
   setSyncing(false);
@@ -1251,8 +1301,23 @@ function forceSync() {
     doSaveCloud().then(() => {
       renderAll();
       showToast('Synced!');
+      updateLastSyncTime();
     });
   });
+}
+
+async function pullCloud() {
+  if (!getPAT()) { showToast('Add a PAT first'); return; }
+  await loadCloud();
+  renderAll();
+  updateLastSyncTime();
+}
+
+function updateLastSyncTime() {
+  const el = document.getElementById('lastSyncTime');
+  if (lastCloudCommit) {
+    el.textContent = `Last cloud update: ${new Date().toLocaleTimeString()}`;
+  }
 }
 
 function setSyncing(on) {
@@ -1286,6 +1351,31 @@ loadLocal().then(() => {
   updateSyncStatus();
   renderAll();
 });
+
+// Periodic background sync check — polls commits API every 30s
+setInterval(async () => {
+  const pat = getPAT();
+  if (!pat || !cloudSyncReady) return;
+  try {
+    const res = await fetch(COMMITS_URL, {
+      headers: {
+        'Authorization': `Bearer ${pat}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Cache-Control': 'no-cache'
+      }
+    });
+    if (!res.ok) return;
+    const commits = await res.json();
+    if (commits.length > 0 && commits[0].sha !== lastCloudCommit) {
+      console.log('New cloud commit detected — syncing...');
+      await loadCloud();
+      renderAll();
+      updateLastSyncTime();
+    }
+  } catch(e) {
+    // Silently fail — don't annoy user
+  }
+}, 30000);
 </script>
 </body>
 </html>
