@@ -1190,10 +1190,10 @@ async function loadCloud() {
   setSyncing(true);
   try {
     // Use authenticated API to avoid caching and support private repos
+    // NOTE: no Cache-Control header — it triggers CORS preflight which fails on Safari
     const headers = {
       'Authorization': `Bearer ${pat}`,
-      'Accept': 'application/vnd.github.v3+json',
-      'Cache-Control': 'no-cache'
+      'Accept': 'application/vnd.github.v3+json'
     };
 
     // Fetch the file content
@@ -1265,7 +1265,13 @@ async function loadCloud() {
     else showToast('Cloud data matches local');
   } catch(e) {
     console.error('Cloud load failed:', e);
+    const errEl = document.getElementById('lastError');
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = '❌ ' + e.message; }
     showToast('Sync failed: ' + e.message);
+    throw e; // Re-throw so callers can handle it
+  }
+  setSyncing(false);
+}
   }
   setSyncing(false);
 }
@@ -1324,15 +1330,18 @@ async function doSaveCloud() {
   setSyncing(false);
 }
 
-function forceSync() {
+async function forceSync() {
   if (!getPAT()) { showToast('Add a PAT first'); return; }
-  loadCloud().then(() => {
-    doSaveCloud().then(() => {
-      renderAll();
-      showToast('Synced!');
-      updateLastSyncTime();
-    });
-  });
+  try {
+    await loadCloud();
+    await doSaveCloud();
+    renderAll();
+    showToast('Synced!');
+    updateLastSyncTime();
+  } catch(e) {
+    // loadCloud already showed error toast
+    console.error('Force sync failed:', e);
+  }
 }
 
 async function pullCloud() {
@@ -1435,8 +1444,7 @@ setInterval(async () => {
     const res = await fetch(COMMITS_URL, {
       headers: {
         'Authorization': `Bearer ${pat}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'Cache-Control': 'no-cache'
+        'Accept': 'application/vnd.github.v3+json'
       }
     });
     if (!res.ok) return;
