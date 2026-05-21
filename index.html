@@ -1220,10 +1220,21 @@ async function loadCloud() {
     const file = await res.json();
     console.log('File size:', file.size, 'bytes, encoding:', file.encoding);
 
-    // Decode base64 content
-    const content = atob(file.content);
+    // Decode base64 content (strip newlines — mobile Safari atob is strict)
+    const b64 = file.content.replace(/\s/g, '');
+    let content;
+    try {
+      content = atob(b64);
+    } catch(e) {
+      throw new Error(`Base64 decode failed: ${e.message}. Content preview: ${file.content.substring(0, 50)}`);
+    }
     console.log('Decoded content length:', content.length);
-    const data = JSON.parse(content);
+    let data;
+    try {
+      data = JSON.parse(content);
+    } catch(e) {
+      throw new Error(`JSON parse failed: ${e.message}. Content preview: ${content.substring(0, 100)}`);
+    }
     console.log('Parsed entries:', Object.keys(data).length);
 
     // Check commit timestamp for version tracking
@@ -1326,9 +1337,14 @@ function forceSync() {
 
 async function pullCloud() {
   if (!getPAT()) { showToast('Add a PAT first'); return; }
-  await loadCloud();
-  renderAll();
-  updateLastSyncTime();
+  try {
+    await loadCloud();
+    renderAll();
+    updateLastSyncTime();
+  } catch(e) {
+    console.error('Pull failed:', e);
+    showToast('Pull failed: ' + e.message);
+  }
 }
 
 function updateLastSyncTime() {
