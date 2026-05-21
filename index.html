@@ -1268,11 +1268,13 @@ async function loadCloud() {
       }
     });
 
-    // Also check for local-only scores that cloud doesn't have
+    // Also check for local-only scores that cloud doesn't have — clear them
     const localOnly = [];
     F.forEach((f, i) => {
       if (f.hg !== null && !(i in data)) {
         localOnly.push(`MW${f.m} ${f.h} vs ${f.a} (${f.hg}-${f.ag})`);
+        f.hg = null;
+        f.ag = null;
       }
     });
 
