@@ -90,11 +90,24 @@ body {
 
 /* Table */
 .table-container { background:var(--bg-card); border-radius:16px; overflow:hidden; border:1px solid var(--border); box-shadow:0 4px 24px rgba(0,0,0,0.3); }
+.table-container {
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.table-container::-webkit-scrollbar { height:4px; }
+.table-container::-webkit-scrollbar-track { background:transparent; }
+.table-container::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
 .table-header {
-  display:grid; grid-template-columns:36px 1fr repeat(7,32px) 40px; gap:2px;
-  padding:12px 8px; font-size:10px; font-weight:700; color:var(--text-dim);
-  text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border);
-  text-align:center; background:rgba(26,31,51,0.5);
+  display:grid; grid-template-columns:36px minmax(120px,1fr) repeat(7,32px) 40px; gap:2px;
+  padding:10px 8px; font-size:11px; font-weight:700; color:var(--text-dim);
+  text-transform:uppercase; letter-spacing:0.5px; position:sticky; top:0;
+  background:var(--bg); z-index:2; min-width:420px;
+}
+.table-row {
+  display:grid; grid-template-columns:36px minmax(120px,1fr) repeat(7,32px) 40px; gap:2px;
+  padding:10px 8px; font-size:13px; align-items:center;
+  border-bottom:1px solid rgba(42,47,69,0.4); transition:background 0.15s;
+  min-width:420px;
 }
 .table-header .club-col { text-align:left; }
 .table-row {
@@ -114,7 +127,7 @@ body {
 .pos-uecl { background:rgba(34,197,94,0.2); color:var(--uecl); }
 .pos-rel { background:rgba(239,68,68,0.2); color:var(--rel); }
 .club-cell { display:flex; align-items:center; gap:8px; overflow:hidden; }
-.club-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; }
+.club-name { font-weight:600; white-space:nowrap; font-size:13px; }
 .club-crest { width:22px; height:22px; flex-shrink:0; object-fit:contain; border-radius:4px; }
 .stat { text-align:center; font-size:12px; color:var(--text-dim); font-variant-numeric:tabular-nums; }
 .stat.pts { font-weight:800; color:var(--text); font-size:14px; }
@@ -259,14 +272,16 @@ body {
 <div class="header">
   <div class="header-inner">
     <div><h1>Premier League</h1><div class="season">2025-26 Season</div></div>
-    <button class="sync-btn" id="syncToggle" onclick="openSettingsModal()">
-      <span class="sync-dot" id="syncDot"></span>
-      Cloud
-    </button>
-    <button class="edit-btn" id="editToggle" onclick="toggleEditMode()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      Edit
-    </button>
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="edit-btn" id="editToggle" onclick="toggleEditMode()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Edit
+      </button>
+      <button class="sync-btn" id="syncToggle" onclick="openSettingsModal()">
+        <span class="sync-dot" id="syncDot"></span>
+        Cloud
+      </button>
+    </div>
   </div>
 </div>
 
@@ -328,8 +343,13 @@ body {
         <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="pullCloud()">Pull from Cloud</button>
         <button class="modal-btn save" style="flex:1;padding:10px;font-size:13px" onclick="forceSync()">Push & Pull</button>
       </div>
-      <button class="modal-btn cancel" style="margin-top:8px;padding:8px;font-size:11px;width:100%" onclick="diagnoseSync()">🔍 Diagnose Connection</button>
-      <button class="modal-btn cancel" style="margin-top:4px;padding:8px;font-size:11px;width:100%" onclick="showScoreCounts()">📊 Show Score Counts</button>
+      <div style="text-align:center;margin-top:12px">
+        <button style="background:none;border:none;color:var(--text-dim);font-size:11px;cursor:pointer;padding:4px 8px" onclick="toggleDebug()">Debug ▾</button>
+      </div>
+      <div id="debugSection" style="display:none;margin-top:8px">
+        <button class="modal-btn cancel" style="margin-top:4px;padding:8px;font-size:11px;width:100%" onclick="diagnoseSync()">🔍 Diagnose Connection</button>
+        <button class="modal-btn cancel" style="margin-top:4px;padding:8px;font-size:11px;width:100%" onclick="showScoreCounts()">📊 Show Score Counts</button>
+      </div>
     </div>
     <div class="modal-actions" style="margin-top:16px">
       <button class="modal-btn cancel" onclick="closeSyncModal()">Close</button>
@@ -1388,6 +1408,18 @@ function updateLastSyncTime() {
   const el = document.getElementById('lastSyncTime');
   if (lastCloudCommit) {
     el.textContent = `Last cloud update: ${new Date().toLocaleTimeString()}`;
+  }
+}
+
+function toggleDebug() {
+  const el = document.getElementById('debugSection');
+  const btn = el.previousElementSibling.querySelector('button');
+  if (el.style.display === 'none') {
+    el.style.display = 'block';
+    btn.textContent = 'Debug ▴';
+  } else {
+    el.style.display = 'none';
+    btn.textContent = 'Debug ▾';
   }
 }
 
